@@ -3,7 +3,7 @@
 #import <React/RCTBridgeModule.h>
 
 #if RCT_NEW_ARCH_ENABLED
-@protocol NativeReactNativeBrownfieldModuleSpec;
+#import <ReactNativeBrownfieldSpec/ReactNativeBrownfieldSpec.h>
 @interface ReactNativeBrownfieldModule : NSObject <NativeReactNativeBrownfieldModuleSpec>
 #else
 @interface ReactNativeBrownfieldModule : NSObject <RCTBridgeModule>
