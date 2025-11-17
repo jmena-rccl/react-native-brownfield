@@ -1,4 +1,6 @@
-internal import React
+#if canImport(React)
+@_exported import React
+#endif
 
 @objcMembers
 public class ReactNativeBrownfieldModuleImpl: NSObject {

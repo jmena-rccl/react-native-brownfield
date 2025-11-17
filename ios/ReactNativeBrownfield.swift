@@ -1,16 +1,7 @@
 import UIKit
-
-#if canImport(React)
-@_exported import React
-#endif
-
-#if canImport(React_RCTAppDelegate)
-@_exported import React_RCTAppDelegate
-#endif
-
-#if canImport(ReactAppDependencyProvider)
-@_exported import ReactAppDependencyProvider
-#endif
+internal import React
+internal import React_RCTAppDelegate
+internal import ReactAppDependencyProvider
 
 class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
   var entryFile = "index"
