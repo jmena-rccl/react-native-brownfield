@@ -297,7 +297,7 @@ public extension ReactNativeBrownfield {
    * @param feature The feature module type
    * @param onLoaded Optional callback when feature is loaded
    */
-  @objc func switchToFeature<T: ReactFeatureModule>(
+  func switchToFeature<T: ReactFeatureModule>(
     _ feature: T.Type,
     onLoaded: (() -> Void)? = nil
   ) {
@@ -315,7 +315,7 @@ public extension ReactNativeBrownfield {
    * @param feature The feature module type
    * @return The initial module name
    */
-  @objc func initialModule<T: ReactFeatureModule>(for feature: T.Type) -> String {
+  func initialModule<T: ReactFeatureModule>(for feature: T.Type) -> String {
     return feature.initialModule
   }
 }
