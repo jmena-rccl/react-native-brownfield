@@ -31,6 +31,8 @@ class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
   public static let shared = ReactNativeBrownfield()
   private var onBundleLoaded: (() -> Void)?
   private var delegate = ReactNativeBrownfieldDelegate()
+  private var jsLoadedObserver: NSObjectProtocol?
+  private var isTransitioning = false
 
   // MARK: - Bundle State
   @objc public enum BundleStateSwift: Int {
@@ -155,11 +157,37 @@ class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
   @objc public func startReactNative(
     onBundleLoaded: (() -> Void)?, launchOptions: [AnyHashable: Any]?
   ) {
-    // Sequential loading: stop if already active
-    if reactNativeFactory != nil {
-      stopReactNative()
+    // Ensure on main thread
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async { [weak self] in
+        self?.startReactNative(onBundleLoaded: onBundleLoaded, launchOptions: launchOptions)
+      }
+      return
     }
 
+    // Prevent multiple simultaneous starts
+    guard !isTransitioning else {
+      print("ReactNativeBrownfield: Cannot start - already transitioning")
+      return
+    }
+
+    // Sequential loading: stop if already active
+    if reactNativeFactory != nil {
+      print("ReactNativeBrownfield: Stopping existing instance before starting new one")
+      stopReactNative()
+      
+      // Give bridge time to tear down
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        self?.performStart(onBundleLoaded: onBundleLoaded, launchOptions: launchOptions)
+      }
+      return
+    }
+
+    performStart(onBundleLoaded: onBundleLoaded, launchOptions: launchOptions)
+  }
+
+  private func performStart(onBundleLoaded: (() -> Void)?, launchOptions: [AnyHashable: Any]?) {
+    isTransitioning = true
     bundleState = .loading
 
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -168,32 +196,37 @@ class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
     if let onBundleLoaded {
       self.onBundleLoaded = {
         self.bundleState = .loaded
+        self.isTransitioning = false
         onBundleLoaded()
       }
-      if RCTIsNewArchEnabled() {
-        NotificationCenter.default.addObserver(
-          self,
-          selector: #selector(jsLoaded),
-          name: NSNotification.Name("RCTInstanceDidLoadBundle"),
-          object: nil
-        )
-      } else {
-        NotificationCenter.default.addObserver(
-          self,
-          selector: #selector(jsLoaded),
-          name: NSNotification.Name("RCTJavaScriptDidLoadNotification"),
-          object: nil
-        )
+      
+      let notificationName = RCTIsNewArchEnabled() 
+        ? NSNotification.Name("RCTInstanceDidLoadBundle")
+        : NSNotification.Name("RCTJavaScriptDidLoadNotification")
+      
+      // Store observer token so we can remove only this specific observer
+      jsLoadedObserver = NotificationCenter.default.addObserver(
+        forName: notificationName,
+        object: nil,
+        queue: .main
+      ) { [weak self] notification in
+        self?.jsLoaded(notification)
       }
     } else {
       bundleState = .loaded
+      isTransitioning = false
     }
   }
 
   @objc private func jsLoaded(_ notification: Notification) {
+    // Remove only our specific observer
+    if let observer = jsLoadedObserver {
+      NotificationCenter.default.removeObserver(observer)
+      jsLoadedObserver = nil
+    }
+    
     onBundleLoaded?()
     onBundleLoaded = nil
-    NotificationCenter.default.removeObserver(self)
   }
 
   /**
@@ -201,15 +234,29 @@ class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
    * Safe to call multiple times - no-op if already stopped.
    */
   @objc public func stopReactNative() {
+    // Ensure on main thread
+    guard Thread.isMainThread else {
+      DispatchQueue.main.sync { [weak self] in
+        self?.stopReactNative()
+      }
+      return
+    }
+
     guard reactNativeFactory != nil else { return }
 
     bundleState = .notLoaded
+    isTransitioning = false
+
+    // Remove specific observer if it exists
+    if let observer = jsLoadedObserver {
+      NotificationCenter.default.removeObserver(observer)
+      jsLoadedObserver = nil
+    }
 
     reactNativeFactory = nil
     rootViewFactory = nil
     onBundleLoaded = nil
 
-    NotificationCenter.default.removeObserver(self)
     NotificationCenter.default.post(name: .reactNativeStopped, object: nil)
   }
 
@@ -228,15 +275,32 @@ class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
     bundle: Bundle = .main,
     onLoaded: (() -> Void)? = nil
   ) {
-    if reactNativeFactory != nil {
-      stopReactNative()
+    // Ensure on main thread
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async { [weak self] in
+        self?.switchBundle(entryFile: entryFile, bundlePath: bundlePath, bundle: bundle, onLoaded: onLoaded)
+      }
+      return
+    }
+
+    guard !isTransitioning else {
+      print("ReactNativeBrownfield: Cannot switch bundle - already transitioning")
+      return
     }
 
     self.entryFile = entryFile
     self.bundlePath = bundlePath
     self.bundle = bundle
 
-    startReactNative(onBundleLoaded: onLoaded)
+    if reactNativeFactory != nil {
+      stopReactNative()
+      // Give bridge time to tear down before starting new one
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        self?.startReactNative(onBundleLoaded: onLoaded)
+      }
+    } else {
+      startReactNative(onBundleLoaded: onLoaded)
+    }
   }
 
   /**
@@ -246,14 +310,29 @@ class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
    * @param onLoaded Optional callback when bundle is reloaded
    */
   @objc public func reloadBundle(onLoaded: (() -> Void)? = nil) {
+    // Ensure on main thread
+    guard Thread.isMainThread else {
+      DispatchQueue.main.async { [weak self] in
+        self?.reloadBundle(onLoaded: onLoaded)
+      }
+      return
+    }
+
+    guard !isTransitioning else {
+      print("ReactNativeBrownfield: Cannot reload - already transitioning")
+      return
+    }
+
     let currentEntry = entryFile
     let currentPath = bundlePath
     let currentBundle = bundle
 
-    stopReactNative()
+    if reactNativeFactory != nil {
+      stopReactNative()
+    }
 
-    // Brief delay to ensure cleanup completes
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+    // Delay to ensure cleanup completes
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
       guard let self = self else { return }
 
       self.entryFile = currentEntry
