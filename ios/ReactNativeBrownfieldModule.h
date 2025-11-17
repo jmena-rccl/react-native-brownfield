@@ -1,6 +1,6 @@
 #ifdef __cplusplus
 
-#import <ReactNativeBrownfield/ReactNativeBrownfield.h>
+#import "ReactBrownfield-Swift.h"
 
 @interface ReactNativeBrownfieldModule : NSObject <NativeReactNativeBrownfieldModuleSpec>
 @end
