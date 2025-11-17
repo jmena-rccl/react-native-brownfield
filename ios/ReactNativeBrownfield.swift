@@ -1,15 +1,15 @@
 import UIKit
 
 #if canImport(React)
-import React
+@_exported import React
 #endif
 
 #if canImport(React_RCTAppDelegate)
-import React_RCTAppDelegate
+@_exported import React_RCTAppDelegate
 #endif
 
 #if canImport(ReactAppDependencyProvider)
-import ReactAppDependencyProvider
+@_exported import ReactAppDependencyProvider
 #endif
 
 class ReactNativeBrownfieldDelegate: RCTDefaultReactNativeFactoryDelegate {
